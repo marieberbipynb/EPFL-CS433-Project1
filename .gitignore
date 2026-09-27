@@ -1,0 +1,13 @@
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.DS_Store
+
+# The course data and reference archives are kept locally, not in Git.
+dataset/
+dataset_to_release.zip
+project-1-mean-girls.zip
+
+# Generated local assets.
+submission.csv
+tmp/
