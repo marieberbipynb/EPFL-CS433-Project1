@@ -25,6 +25,20 @@ CONTINUOUS_SENTINELS = np.array(
     dtype=np.float32,
 )
 
+DEFAULT_INTERACTION_PAIRS = (
+    ("_AGEG5YR", "GENHLTH"),
+    ("_AGEG5YR", "DIABETE3"),
+    ("_AGEG5YR", "BPHIGH4"),
+    ("_AGEG5YR", "TOLDHI2"),
+    ("_AGEG5YR", "SEX"),
+    ("_AGEG5YR", "CVDSTRK3"),
+    ("_AGEG5YR", "_BMI5CAT"),
+    ("_AGEG5YR", "_SMOKER3"),
+    ("_AGEG5YR", "EXERANY2"),
+    ("_AGEG5YR", "_RFHLTH"),
+    ("_AGEG5YR", "_RFCHOL"),
+)
+
 
 def load_dataset(data_dir):
     """Load train/test arrays, labels, ids, and feature names."""
@@ -107,6 +121,33 @@ def stratified_split(y, validation_fraction=0.2, seed=123):
     return train_idx, validation_idx
 
 
+def stratified_kfold(y, n_splits=3, seed=123):
+    """Return deterministic stratified train/validation folds."""
+    y = np.asarray(y)
+    if n_splits < 2:
+        raise ValueError("n_splits must be at least 2.")
+    if not np.all((y == -1) | (y == 1)):
+        raise ValueError("Labels must contain only -1 and 1.")
+
+    rng = np.random.default_rng(seed)
+    validation_parts = [[] for _ in range(n_splits)]
+    for label in (-1, 1):
+        indices = np.where(y == label)[0]
+        rng.shuffle(indices)
+        for fold, part in enumerate(np.array_split(indices, n_splits)):
+            validation_parts[fold].append(part)
+
+    all_indices = np.arange(y.shape[0])
+    folds = []
+    for parts in validation_parts:
+        validation_idx = np.concatenate(parts)
+        rng.shuffle(validation_idx)
+        train_mask = np.ones(y.shape[0], dtype=bool)
+        train_mask[validation_idx] = False
+        folds.append((all_indices[train_mask], validation_idx))
+    return folds
+
+
 def classification_metrics(y_true, y_pred):
     """Compute accuracy, precision, recall, and F1 for positive label 1."""
     y_true = np.asarray(y_true)
@@ -138,7 +179,7 @@ def classification_metrics(y_true, y_pred):
 
 
 def choose_threshold(scores, y_true, quantile_count=500):
-    """Choose the score threshold that maximizes validation F1."""
+    """Choose the exact score threshold that maximizes validation F1."""
     scores = np.asarray(scores)
     y_true = np.asarray(y_true)
     if scores.shape != y_true.shape:
@@ -149,31 +190,45 @@ def choose_threshold(scores, y_true, quantile_count=500):
     finite_scores = scores[np.isfinite(scores)]
     if finite_scores.size == 0:
         raise ValueError("At least one score must be finite.")
-    candidates = np.unique(
-        np.quantile(finite_scores, np.linspace(0.01, 0.99, quantile_count))
+    finite_indices = np.where(np.isfinite(scores))[0]
+    order = finite_indices[np.argsort(scores[finite_indices])[::-1]]
+    sorted_scores = scores[order]
+    sorted_positive = y_true[order] == 1
+    true_positives = np.cumsum(sorted_positive)
+    false_positives = np.cumsum(~sorted_positive)
+    total_positives = np.sum(y_true == 1)
+
+    group_ends = np.r_[sorted_scores[1:] != sorted_scores[:-1], True]
+    candidate_indices = np.where(group_ends)[0]
+    tp = true_positives[candidate_indices]
+    fp = false_positives[candidate_indices]
+    fn = total_positives - tp
+    denominator = 2 * tp + fp + fn
+    f1_values = np.divide(
+        2.0 * tp,
+        denominator,
+        out=np.zeros_like(tp, dtype=float),
+        where=denominator > 0,
     )
 
-    best_threshold = float(candidates[0])
-    best_metrics = None
-    best_f1 = -1.0
-
-    for threshold in candidates:
-        predictions = np.where(scores >= threshold, 1, -1)
-        metrics = classification_metrics(y_true, predictions)
-        if metrics["f1"] > best_f1:
-            best_f1 = metrics["f1"]
-            best_threshold = float(threshold)
-            best_metrics = metrics
-
-    return best_threshold, best_metrics
+    best_index = candidate_indices[np.argmax(f1_values)]
+    best_threshold = float(sorted_scores[best_index])
+    predictions = np.where(scores >= best_threshold, 1, -1)
+    return best_threshold, classification_metrics(y_true, predictions)
 
 
 class Preprocessor:
     """Fit and apply a compact BRFSS feature representation."""
 
-    def __init__(self, categorical_threshold=20, max_missing_fraction=0.995):
+    def __init__(
+        self,
+        categorical_threshold=20,
+        max_missing_fraction=0.995,
+        interaction_pairs=DEFAULT_INTERACTION_PAIRS,
+    ):
         self.categorical_threshold = categorical_threshold
         self.max_missing_fraction = max_missing_fraction
+        self.interaction_pairs = interaction_pairs
 
     def fit(self, x, feature_names):
         """Learn column types, categorical values, and numeric statistics."""
@@ -227,11 +282,31 @@ class Preprocessor:
         self.numeric_std = np.where(self.numeric_std > 1e-6, self.numeric_std, 1.0)
         self.numeric_std = self.numeric_std.astype(np.float32)
 
+        name_to_column = {name: column for column, name in enumerate(feature_names)}
+        self.interaction_specs = []
+        for first_name, second_name in self.interaction_pairs:
+            if first_name not in name_to_column or second_name not in name_to_column:
+                continue
+            first_column = name_to_column[first_name]
+            second_column = name_to_column[second_name]
+            first_values = np.unique(
+                x[np.isfinite(x[:, first_column]), first_column]
+            ).astype(np.float32)
+            second_values = np.unique(
+                x[np.isfinite(x[:, second_column]), second_column]
+            ).astype(np.float32)
+            combinations = np.array(
+                [(first, second) for first in first_values for second in second_values],
+                dtype=np.float32,
+            )
+            self.interaction_specs.append((first_column, second_column, combinations))
+
         self.n_features_out = (
             1
             + len(self.numeric_missing_indices)
             + len(self.numeric_columns)
             + sum(values.size + 1 for values in self.categorical_values)
+            + sum(spec[2].shape[0] for spec in self.interaction_specs)
         )
         return self
 
@@ -276,6 +351,15 @@ class Preprocessor:
             transformed[:, write_col] = (~finite).astype(np.float32)
             write_col += 1
 
+        for first_column, second_column, combinations in self.interaction_specs:
+            first_values = x[:, first_column]
+            second_values = x[:, second_column]
+            for first, second in combinations:
+                transformed[:, write_col] = (
+                    (first_values == first) & (second_values == second)
+                ).astype(np.float32)
+                write_col += 1
+
         return transformed
 
 
@@ -285,7 +369,7 @@ def fit_weighted_ridge(
     y,
     lambda_,
     positive_weight=8.0,
-    batch_size=32768,
+    batch_size=8192,
 ):
     """Fit a weighted ridge model from transformed chunks."""
     n_samples = y.shape[0]

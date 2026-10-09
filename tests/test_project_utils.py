@@ -7,6 +7,7 @@ from project_utils import (
     Preprocessor,
     choose_threshold,
     classification_metrics,
+    stratified_kfold,
     stratified_split,
     write_submission,
 )
@@ -23,6 +24,17 @@ def test_stratified_split_is_reproducible_and_disjoint():
     assert np.mean(y[validation_a] == 1) == pytest.approx(0.1)
 
 
+def test_stratified_kfold_covers_every_row_once():
+    y = np.array([-1] * 90 + [1] * 10)
+    folds = stratified_kfold(y, n_splits=5, seed=7)
+    validation_indices = np.concatenate([validation for _, validation in folds])
+
+    np.testing.assert_array_equal(np.sort(validation_indices), np.arange(y.size))
+    for train, validation in folds:
+        assert np.intersect1d(train, validation).size == 0
+        assert np.mean(y[validation] == 1) == pytest.approx(0.1)
+
+
 def test_preprocessor_fits_statistics_only_on_fit_data():
     x_fit = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, np.nan]], dtype=np.float32)
     x_other = np.array([[1000.0, 2.0]], dtype=np.float32)
@@ -33,6 +45,21 @@ def test_preprocessor_fits_statistics_only_on_fit_data():
     assert transformed.shape[0] == 1
     assert np.isfinite(transformed).all()
     assert preprocessor.numeric_high[0] < 1000.0
+
+
+def test_preprocessor_adds_configured_interactions():
+    x = np.array([[1.0, 1.0], [1.0, 2.0], [2.0, 1.0]], dtype=np.float32)
+    plain = Preprocessor(categorical_threshold=2, interaction_pairs=()).fit(
+        x, ["age", "health"]
+    )
+    interacting = Preprocessor(
+        categorical_threshold=2,
+        interaction_pairs=(("age", "health"),),
+    ).fit(x, ["age", "health"])
+
+    assert interacting.n_features_out == plain.n_features_out + 4
+    transformed = interacting.transform(x)
+    assert np.all(transformed[:, -4:].sum(axis=1) == 1)
 
 
 def test_threshold_selection_and_metrics_agree():

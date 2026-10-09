@@ -9,5 +9,9 @@ dataset_to_release.zip
 project-1-mean-girls.zip
 
 # Generated local assets.
-submission.csv
+submission_cv_*.csv
+submission_candidate_*.csv
+submission_boosting_*.csv
+submission_best_*.csv
+submission_blend_*.csv
 tmp/

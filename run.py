@@ -1,91 +1,87 @@
-"""Train the final model and create submission.csv.
-
-The full pipeline is deterministic and uses only NumPy plus the standard
-library. It first estimates a decision threshold on a fixed validation split,
-then retrains the selected weighted ridge model on the complete training set.
-"""
+"""Train the final NumPy-only ensemble and create submission.csv."""
 
 from pathlib import Path
 
 import numpy as np
 
-from project_utils import (
-    Preprocessor,
-    choose_threshold,
-    classification_metrics,
-    fit_weighted_ridge,
-    load_dataset,
-    predict_scores,
-    stratified_split,
-    write_submission,
-)
+from numpy_boosting import HistogramGradientBoosting, QuantileBinner
+from project_utils import ID_COLUMNS, load_dataset, write_submission
 
 
 DATA_DIR = Path(__file__).resolve().parent / "dataset"
 OUTPUT_PATH = Path(__file__).resolve().parent / "submission.csv"
+MODEL_SEEDS = (123, 321)
+N_ESTIMATORS = 250
+POSITIVE_RATE = 0.127
 
-CATEGORICAL_THRESHOLD = 20
-LAMBDA = 0.01
-POSITIVE_WEIGHT = 4.0
-VALIDATION_FRACTION = 0.2
-SEED = 123
+
+def standardize(scores):
+    """Put independently trained model scores on a common scale."""
+    return (scores - scores.mean()) / scores.std()
+
+
+def predict_top_fraction(scores, positive_rate):
+    """Return exactly the requested fraction of highest scores as positive."""
+    if not 0.0 < positive_rate < 1.0:
+        raise ValueError("positive_rate must be strictly between 0 and 1.")
+    positive_count = int(round(positive_rate * scores.size))
+    positive_indices = np.argpartition(scores, -positive_count)[-positive_count:]
+    predictions = np.full(scores.size, -1, dtype=np.int8)
+    predictions[positive_indices] = 1
+    return predictions
 
 
 def main():
-    """Run validation, final training, and prediction export."""
+    """Fit two categorical boosting models and write the final submission."""
     x_train, x_test, y_train, _, test_ids, feature_names = load_dataset(DATA_DIR)
-    train_idx, validation_idx = stratified_split(
-        y_train,
-        validation_fraction=VALIDATION_FRACTION,
-        seed=SEED,
-    )
+    keep = np.array([name not in ID_COLUMNS for name in feature_names], dtype=bool)
+    boosting_train = x_train[:, keep]
+    boosting_test = x_test[:, keep]
 
-    validation_preprocessor = Preprocessor(
-        categorical_threshold=CATEGORICAL_THRESHOLD
-    ).fit(x_train[train_idx], feature_names)
-    validation_weights = fit_weighted_ridge(
-        validation_preprocessor,
-        x_train[train_idx],
-        y_train[train_idx],
-        lambda_=LAMBDA,
-        positive_weight=POSITIVE_WEIGHT,
-    )
-    validation_scores = predict_scores(
-        validation_preprocessor,
-        validation_weights,
-        x_train[validation_idx],
-    )
-    threshold, threshold_metrics = choose_threshold(
-        validation_scores,
-        y_train[validation_idx],
-    )
-    validation_predictions = np.where(validation_scores >= threshold, 1, -1)
-    validation_metrics = classification_metrics(
-        y_train[validation_idx],
-        validation_predictions,
-    )
+    print("Fitting histogram bins", flush=True)
+    binner = QuantileBinner(max_bins=32, categorical_threshold=20).fit(boosting_train)
+    train_bins = binner.transform(boosting_train)
+    test_bins = binner.transform(boosting_test)
 
-    print("Validation metrics")
-    for key, value in validation_metrics.items():
-        print(f"  {key}: {value:.5f}")
-    print(f"  threshold: {threshold:.6f}")
-    print(f"  selected_threshold_f1: {threshold_metrics['f1']:.5f}")
+    model_scores = []
+    for model_number, seed in enumerate(MODEL_SEEDS, start=1):
+        print(
+            f"Training model {model_number}/{len(MODEL_SEEDS)} (seed={seed})",
+            flush=True,
+        )
 
-    final_preprocessor = Preprocessor(categorical_threshold=CATEGORICAL_THRESHOLD).fit(
-        x_train,
-        feature_names,
+        def progress(iteration, _, __):
+            if iteration % 10 == 0:
+                print(f"  trees={iteration}/{N_ESTIMATORS}", flush=True)
+
+        model = HistogramGradientBoosting(
+            n_estimators=N_ESTIMATORS,
+            learning_rate=0.06,
+            max_depth=3,
+            l2=20.0,
+            min_samples_leaf=300,
+            max_features=160,
+            positive_weight=1.5,
+            categorical_splits=True,
+            learn_missing_direction=True,
+            feature_sampling="tree",
+            seed=seed,
+        ).fit(
+            train_bins,
+            y_train,
+            binner.n_bins,
+            categorical_features=binner.categorical_features,
+            callback=progress,
+        )
+        model_scores.append(standardize(model.decision_function(test_bins)))
+
+    ensemble_scores = np.mean(model_scores, axis=0)
+    predictions = predict_top_fraction(ensemble_scores, POSITIVE_RATE)
+    write_submission(test_ids, predictions, OUTPUT_PATH)
+    print(
+        f"Wrote {OUTPUT_PATH} ({np.sum(predictions == 1)} positive predictions)",
+        flush=True,
     )
-    final_weights = fit_weighted_ridge(
-        final_preprocessor,
-        x_train,
-        y_train,
-        lambda_=LAMBDA,
-        positive_weight=POSITIVE_WEIGHT,
-    )
-    test_scores = predict_scores(final_preprocessor, final_weights, x_test)
-    test_predictions = np.where(test_scores >= threshold, 1, -1)
-    write_submission(test_ids, test_predictions, OUTPUT_PATH)
-    print(f"Wrote {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from project_utils import (
 
 
 DATA_DIR = Path(__file__).resolve().parent / "dataset"
-LAMBDAS = (0.001, 0.003, 0.01)
+LAMBDAS = (0.001, 0.003, 0.005, 0.01)
 POSITIVE_WEIGHTS = (1.0, 4.0, 8.0)
 VALIDATION_FRACTION = 0.2
 SEED = 123
