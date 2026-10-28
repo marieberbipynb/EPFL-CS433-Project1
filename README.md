@@ -3,6 +3,20 @@
 This repository contains a complete NumPy-only solution for project 1 on
 MICHD prediction from the BRFSS medical survey dataset.
 
+## Authors
+
+- **Marie Berbichashvili**: design and implementation of the whole code base: data
+  loading and preprocessing, the six required methods, the weighted ridge
+  regression, the NumPy gradient boosting model written from scratch
+  (quantile binning, categorical splits, missing-value handling), and the
+  `run.py` pipeline.
+
+- **Nafi Anna Dramé**: running all models under the same protocol (same
+  validation split and metric) to compare them, the ablation study,
+  interpreting the results, including the detection of the `HAREHAB1`
+  leakage, the exploratory data analysis, and writing the report.
+
+
 ## Files
 
 - `run.py`: deterministic end-to-end script that trains the final model on
@@ -35,7 +49,7 @@ MICHD prediction from the BRFSS medical survey dataset.
 
 - `exploratory_data_analysis.ipynb`: exploratory data analysis and report
   figures.
-  
+
 - `dataset/`: expected location for `x_train.csv`, `y_train.csv`, and
   `x_test.csv`.
 
