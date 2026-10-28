@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from numpy_boosting import HistogramGradientBoosting, QuantileBinner
-from project_utils import ID_COLUMNS, load_dataset, write_submission
+from project_utils import ID_COLUMNS, LEAKAGE_COLUMNS, load_dataset, write_submission
 
 
 DATA_DIR = Path(__file__).resolve().parent / "dataset"
@@ -34,7 +34,8 @@ def predict_top_fraction(scores, positive_rate):
 def main():
     """Fit two categorical boosting models and write the final submission."""
     x_train, x_test, y_train, _, test_ids, feature_names = load_dataset(DATA_DIR)
-    keep = np.array([name not in ID_COLUMNS for name in feature_names], dtype=bool)
+    excluded = ID_COLUMNS | LEAKAGE_COLUMNS
+    keep = np.array([name not in excluded for name in feature_names], dtype=bool)
     boosting_train = x_train[:, keep]
     boosting_test = x_test[:, keep]
 

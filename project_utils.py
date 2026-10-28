@@ -5,7 +5,6 @@ The code intentionally uses only the Python standard library and NumPy.
 
 import csv
 from pathlib import Path
-
 import numpy as np
 
 
@@ -19,6 +18,12 @@ ID_COLUMNS = {
     "_LLCPWT",
     "_CLLCPWT",
 }
+
+# HAREHAB1 (outpatient rehabilitation after a heart attack) is only asked to
+# respondents who answered yes to the heart-attack question CVDINFR4, one of
+# the two questions defining the MICHD label, so it leaks the label.
+LEAKAGE_COLUMNS = {"HAREHAB1"}
+
 
 CONTINUOUS_SENTINELS = np.array(
     [555, 5555, 777, 7777, 77777, 999, 9999, 99900, 999000, 999999],
