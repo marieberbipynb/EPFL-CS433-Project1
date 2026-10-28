@@ -5,18 +5,41 @@ MICHD prediction from the BRFSS medical survey dataset.
 
 ## Files
 
+- `run.py`: deterministic end-to-end script that trains the final model on
+  all training rows and writes `submission.csv`. The final model is a
+  two-seed gradient boosting ensemble trained on the raw features, without
+  identifiers, survey weights and the leaky `HAREHAB1` column.
+
 - `implementations.py`: the six mandatory methods requested in the project
   statement.
-- `project_utils.py`: loading, preprocessing, metrics, threshold selection,
-  and weighted ridge training utilities.
-- `experiments.py`: reproducible comparison of ridge penalties and positive
-  class weights on the validation split.
-- `numpy_boosting.py`: NumPy implementation of histogram gradient boosting.
-- `boosting_experiment.py`: reproducible validation of the selected model.
-- `run.py`: deterministic end-to-end script that creates the final
-  `submission.csv`.
+
+- `numpy_boosting.py`: NumPy implementation of quantile binning and
+  histogram gradient boosting.
+
+- `project_utils.py`: data loading, excluded column lists (`ID_COLUMNS`,
+  `LEAKAGE_COLUMNS`), metrics, stratified split, and the preprocessing used by
+  the linear baselines.
+
+- `validate.py`: validation counterpart of `run.py`: trains the same model on
+  80% of the training rows and reports validation F1, precision, recall and
+  the most used features.
+
+- `baselines.py`: validation F1 of the six linear methods (Table I of the
+  report).
+
+- `ablation.py`: ablation study of the boosting model (Table II). It was run
+  before removing `HAREHAB1`, so it evaluates the model with this column.
+
+- `feature_importance.py`: split-count feature importance of the model with
+  `HAREHAB1`, used to detect its label leakage.
+
+- `exploratory_data_analysis.ipynb`: exploratory data analysis and report
+  figures.
+  
 - `dataset/`: expected location for `x_train.csv`, `y_train.csv`, and
   `x_test.csv`.
+
+All validation scripts use the same stratified 80/20 split (seed 123).
 
 ## Reproducing the submission
 
