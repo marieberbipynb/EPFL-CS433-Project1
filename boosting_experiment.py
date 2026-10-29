@@ -17,7 +17,6 @@ from project_utils import (
     stratified_split,
 )
 
-
 DATA_DIR = Path(__file__).resolve().parent / "dataset"
 SPLIT_SEED = int(os.environ.get("SPLIT_SEED", "123"))
 MODEL_SEED = int(os.environ.get("MODEL_SEED", str(SPLIT_SEED)))

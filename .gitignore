@@ -8,6 +8,9 @@ dataset/
 dataset_to_release.zip
 project-1-mean-girls.zip
 
+# The grading test files are provided by the course
+  grading_tests/
+
 # Generated local assets.
 submission_cv_*.csv
 submission_candidate_*.csv

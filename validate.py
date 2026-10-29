@@ -98,7 +98,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+
 """ Output of the code last time, when it as run
 (.venv) C:\MA3\ML\project_1_\EPFL-CS433-Project1>c:\MA3\ML\project_1_\.venv\Scripts\python.exe c:/MA3/ML/project_1_/EPFL-CS433-Project1/validate.py
 Data loaded

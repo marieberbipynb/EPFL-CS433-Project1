@@ -7,7 +7,6 @@ import csv
 from pathlib import Path
 import numpy as np
 
-
 ID_COLUMNS = {
     "IDATE",
     "SEQNO",

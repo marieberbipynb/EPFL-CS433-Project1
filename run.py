@@ -7,7 +7,6 @@ import numpy as np
 from numpy_boosting import HistogramGradientBoosting, QuantileBinner
 from project_utils import ID_COLUMNS, LEAKAGE_COLUMNS, load_dataset, write_submission
 
-
 DATA_DIR = Path(__file__).resolve().parent / "dataset"
 OUTPUT_PATH = Path(__file__).resolve().parent / "submission.csv"
 MODEL_SEEDS = (123, 321)
