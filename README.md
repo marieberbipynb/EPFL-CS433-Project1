@@ -1,7 +1,9 @@
 # EPFL CS-433 Project 1
 
-This repository contains a complete NumPy-only solution for project 1 on
-MICHD prediction from the BRFSS medical survey dataset.
+NumPy-only prediction of coronary heart disease (MICHD) from the BRFSS 2015
+survey. The final model is a gradient boosting ensemble written from scratch
+in NumPy (`numpy_boosting.py`). The six methods of the project statement are
+used as linear baselines.
 
 ## Authors
 
@@ -16,6 +18,7 @@ MICHD prediction from the BRFSS medical survey dataset.
   interpreting the results, including the detection of the `HAREHAB1`
   leakage, the exploratory data analysis, and writing the report.
 
+AIcrowd team: `WMN` (`marieberbipynb`, `Nafi_Drm`).
 
 ## Files
 
@@ -50,82 +53,61 @@ MICHD prediction from the BRFSS medical survey dataset.
 - `exploratory_data_analysis.ipynb`: exploratory data analysis and report
   figures.
 
+- `tests/`: unit tests of `numpy_boosting.py` and `project_utils.py`.
+
 - `dataset/`: expected location for `x_train.csv`, `y_train.csv`, and
   `x_test.csv`.
 
-All validation scripts use the same stratified 80/20 split (seed 123).
+  - `report/report.pdf`: the project report.
 
-## Reproducing the submission
+## Submission
 
-Create the grading environment from the provided file, then run:
+`run.py` produces our final submission: **F1 0.448, accuracy 0.882** on
+AIcrowd.
 
-```bash
-python run.py
-```
+The key step of the project was replacing the linear models by a gradient
+boosting model implemented from scratch in NumPy, which handles categorical
+and missing values natively and gave our best results. Our best leaderboard
+score (F1 0.454) comes from this same model with the `HAREHAB1` column, which
+we then removed because it leaks the label (see the report).
 
-The script loads the CSV files from `dataset/`, trains two categorical
-histogram-boosting models on all training rows, bags their standardized scores,
-and writes `submission.csv`. Its trees evaluate both ordered thresholds and
-learned category groupings, choose missing-value directions explicitly, and
-model three levels of interactions.
-
-At 250 trees, this configuration reaches F1 0.4506 and 0.4517 on two fixed
-validation splits. The nearby 240--270 tree plateau has mean F1 about 0.4512.
-The final script uses seeds 123 and 321 and labels the top 12.7% of test scores
-as positive.
-
-The public AIcrowd results provide the more useful selection signal: the
-previous 240-tree pure boosting ensemble scored F1 0.448 and accuracy 0.881,
-whereas the previous ridge blend scored F1 0.447 and accuracy 0.885. These
-leaderboard results motivated retaining pure boosting and replacing the ridge
-blend with the categorical depth-3 model.
-
-To reproduce the compact hyperparameter comparison reported in the project,
-run:
-
-```bash
-python experiments.py
-```
-
-Run the local and public tests with:
-
-```bash
-pytest -q --github_link /path/to/repository
-```
-
-Ridge baseline hyperparameters:
-
-- model: weighted ridge regression
-- categorical one-hot threshold: 20 unique finite values
-- ridge regularization `lambda`: 0.005
-- positive class weight: 4.0
-- validation seed: 123
-
-Categorical boosting hyperparameters:
-
-- trees: 250 per model, seeds 123 and 321
-- depth: 3
-- learning rate: 0.06
-- maximum bins: 32
-- sampled features per tree: 160
-- minimum samples per leaf: 300
-- positive class weight: 1.5
 
 ## Method summary
 
-The preprocessing removes survey identifier and sampling-weight columns, drops
-almost-empty columns, one-hot encodes low-cardinality variables, imputes and
-standardizes continuous variables, and adds missing-value indicators for
-continuous variables with non-negligible missingness. It also includes a small
-set of age-by-risk-factor interactions that improved F1 on three validation
-splits.
+**Evaluation.** The data is highly imbalanced (8.83% positives), so the metric
+is the F1 score of the positive class, computed on the 20% validation split.
 
-The local validation metric is F1 for the positive MICHD class, because the
-dataset is highly imbalanced. The weighted ridge baseline reaches approximately:
+**Final model (gradient boosting).** Identifiers, survey weights and
+`HAREHAB1` are removed, leaving 312 raw features. Each feature is mapped to at
+most 32 ordered quantile bins, plus one bin for missing values; features with
+at most 20 distinct values are treated as categorical. Trees of depth 3 are
+grown with second-order (Newton) updates of the logistic loss, with a class
+weight of 1.5 for positives. For categorical features, bins are sorted by their
+gradient/hessian ratio before searching the best split; for the others, the
+tree also learns in which branch missing values go. The scores of two models
+(seeds 123 and 321) are standardized and averaged, and the 12.7% highest
+scores are predicted positive.
 
-- accuracy: 0.873
-- precision: 0.359
-- recall: 0.564
-- F1: 0.439
+Hyperparameters: 250 trees per model, depth 3, learning rate 0.06, L2
+regularization 20, at least 300 samples per leaf, 160 features sampled per
+tree, at most 32 bins, positive class weight 1.5, predicted positive rate
+12.7%.
 
-No external machine-learning library is used.
+**Linear baselines.** For the six methods of `implementations.py`, survey
+identifiers, sampling weights and features missing for at least 99.5% of
+respondents are removed. Features with at most 20 distinct values are one-hot
+encoded with a missing category. For continuous features, special codes are
+set to missing, then values are median-imputed, clipped to the 1st-99th
+percentiles and standardized, with a missing-value indicator when more than
+0.5% are missing. Interactions between the age group and 11 risk factors are
+added, giving 2,252 features. Ridge regression uses `lambda = 0.01` and the
+regularized logistic regression `lambda = 1e-4`; gradient-based methods run
+500 iterations (50,000 for SGD), and each model is evaluated with a decision
+threshold tuned on the validation set.
+
+**Results (validation F1).** Best linear baseline 0.434 (least squares and
+ridge regression), final gradient boosting 0.440 (0.449 with the leaky
+`HAREHAB1`).
+
+No external machine-learning library is used: only NumPy and the Python
+standard library (matplotlib for the figures of the notebook).
